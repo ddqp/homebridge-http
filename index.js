@@ -29,13 +29,13 @@ var pollingtoevent = require('polling-to-event');
 		this.name                   = config["name"];
 		this.brightnessHandling     = config["brightnessHandling"] 	 	|| "no";
 		this.switchHandling 		= config["switchHandling"] 		 	|| "no";
-		
+
 		//realtime polling info
 		this.state = false;
 		this.currentlevel = 0;
 		this.enableSet = true;
 		var that = this;
-		
+
 		// Status Polling, if you want to add additional services that don't use switch handling you can add something like this || (this.service=="Smoke" || this.service=="Motion"))
 		if (this.status_url && this.switchHandling =="realtime") {
 			var powerurl = this.status_url;
@@ -44,16 +44,20 @@ var pollingtoevent = require('polling-to-event');
             		if (error) {
                 		that.log('HTTP get power function failed: %s', error.message);
 		                callback(error);
-            		} else {               				    
+            		} else {
 						done(null, body);
             		}
         		})
 			}, {longpolling:true,interval:300,longpollEventName:"statuspoll"});
 
-		statusemitter.on("statuspoll", function(data) {       
+		statusemitter.on("statuspoll", function(data) {
         	var binaryState = parseInt(data.replace(/\D/g,""));
-	    	that.state = binaryState > 0;
-			that.log(that.service, "received power",that.status_url, "state is currently", binaryState); 
+	    	//注释开始，修改成如下，适配node-sonos-http-api	
+		if(data.includes("PAUSED_PLAYBACK")){
+                that.state = 0} else {that.state = 1}
+		//注释结束
+                that.log(that.state);
+			that.log(that.service, "received power",that.status_url, "state is currently", that.state);
 			// switch used to easily add additonal services
 			that.enableSet = false;
 			switch (that.service) {
@@ -67,10 +71,10 @@ var pollingtoevent = require('polling-to-event');
 					if (that.lightbulbService) {
 						that.lightbulbService.getCharacteristic(Characteristic.On)
 						.setValue(that.state);
-					}		
-					break;			
+					}
+					break;
 			}
-			that.enableSet = true;   
+			that.enableSet = true;
 		});
 
 	}
@@ -82,21 +86,21 @@ var pollingtoevent = require('polling-to-event');
             		if (error) {
                 			that.log('HTTP get power function failed: %s', error.message);
 							return;
-            		} else {               				    
+            		} else {
 						done(null, responseBody);
             		}
         		}) // set longer polling as slider takes longer to set value
     	}, {longpolling:true,interval:300,longpollEventName:"levelpoll"});
 
-		levelemitter.on("levelpoll", function(data) {  
+		levelemitter.on("levelpoll", function(data) {
 			that.currentlevel = parseInt(data);
 
 			that.enableSet = false;
-			if (that.lightbulbService) {				
-				that.log(that.service, "received brightness",that.brightnesslvl_url, "level is currently", that.currentlevel); 		        
+			if (that.lightbulbService) {
+				that.log(that.service, "received brightness",that.brightnesslvl_url, "level is currently", that.currentlevel);
 				that.lightbulbService.getCharacteristic(Characteristic.Brightness)
 				.setValue(that.currentlevel);
-			}   
+			}
 			that.enableSet = true;
     	});
 	}
@@ -122,18 +126,18 @@ var pollingtoevent = require('polling-to-event');
 	},
 
 	setPowerState: function(powerOn, callback) {
-				
+
 	if (this.enableSet == true && (this.currentlevel == 0 || !powerOn )) {
-		
+
 		var url;
 		var body;
-		
+
 		if (!this.on_url || !this.off_url) {
 				this.log.warn("Ignoring request; No power url defined.");
 				callback(new Error("No power url defined."));
 				return;
 		}
-		
+
 		if (powerOn) {
 			url = this.on_url;
 			body = this.on_body;
@@ -143,7 +147,7 @@ var pollingtoevent = require('polling-to-event');
 			body = this.off_body;
 			this.log("Setting power state to off");
 		}
-		
+
 		this.httpRequest(url, body, this.http_method, this.username, this.password, this.sendimmediately, function(error, response, responseBody) {
 			if (error) {
 			this.log('HTTP set power function failed: %s', error.message);
@@ -157,24 +161,24 @@ var pollingtoevent = require('polling-to-event');
 	 	callback();
 	}
 	},
-  
+
   getPowerState: function(callback) {
 	if (!this.status_url) {
 		this.log.warn("Ignoring request; No status url defined.");
 		callback(new Error("No status url defined."));
 		return;
 	}
-	
+
 	var url = this.status_url;
 	this.log("Getting power state");
-	
+
 	this.httpRequest(url, "", "GET", this.username, this.password, this.sendimmediately, function(error, response, responseBody) {
 	if (error) {
 		this.log('HTTP get power function failed: %s', error.message);
 		callback(error);
 	} else {
-               if (responseBody.includes("ACTIVE")) {
-                        var isMotionActive = responseBody.includes("ACTIVE");   // Added support for motion http response for ON
+               if (responseBody.includes("PLAYING")) {
+                        var isMotionActive = responseBody.includes("PLAYING");   // Added support for motion http response for ON
                         var binaryState = Number(isMotionActive);
                 } else {
                         var binaryState = parseInt(responseBody.replace(/\D/g,""));
@@ -191,15 +195,15 @@ var pollingtoevent = require('polling-to-event');
 			this.log.warn("Ignoring request; No brightness level url defined.");
 			callback(new Error("No brightness level url defined."));
 			return;
-		}		
+		}
 			var url = this.brightnesslvl_url;
 			this.log("Getting Brightness level");
-	
+
 			this.httpRequest(url, "", "GET", this.username, this.password, this.sendimmediately, function(error, response, responseBody) {
 			if (error) {
 				this.log('HTTP get brightness function failed: %s', error.message);
 				callback(error);
-			} else {			
+			} else {
 				var binaryState = parseInt(responseBody.replace(/\D/g,""));
 				var level = binaryState;
 				this.log("brightness state is currently %s", binaryState);
@@ -214,12 +218,12 @@ var pollingtoevent = require('polling-to-event');
 			this.log.warn("Ignoring request; No brightness url defined.");
 			callback(new Error("No brightness url defined."));
 			return;
-		}    
-	
+		}
+
 		var url = this.brightness_url.replace("%b", level)
-	
+
 		this.log("Setting brightness to %s", level);
-	
+
 		this.httpRequest(url, "", this.http_brightness_method, this.username, this.password, this.sendimmediately, function(error, response, body) {
 		if (error) {
 			this.log('HTTP brightness function failed: %s', error);
@@ -240,43 +244,43 @@ var pollingtoevent = require('polling-to-event');
 	},
 
 	getServices: function() {
-		
+
 		var that = this;
-		
+
 		// you can OPTIONALLY create an information service if you wish to override
 		// the default values for things like serial number, model, etc.
 		var informationService = new Service.AccessoryInformation();
-	
+
 		informationService
 		.setCharacteristic(Characteristic.Manufacturer, "HTTP Manufacturer")
 		.setCharacteristic(Characteristic.Model, "HTTP Model")
 		.setCharacteristic(Characteristic.SerialNumber, "HTTP Serial Number");
-	
+
 		switch (this.service) {
-		case "Switch": 
+		case "Switch":
 			this.switchService = new Service.Switch(this.name);
-			switch (this.switchHandling) {	
-				//Power Polling			
-				case "yes":					
+			switch (this.switchHandling) {
+				//Power Polling
+				case "yes":
 					this.switchService
 					.getCharacteristic(Characteristic.On)
 					.on('get', this.getPowerState.bind(this))
-					.on('set', this.setPowerState.bind(this));						
+					.on('set', this.setPowerState.bind(this));
 					break;
-				case "realtime":				
+				case "realtime":
 					this.switchService
 					.getCharacteristic(Characteristic.On)
 					.on('get', function(callback) {callback(null, that.state)})
 					.on('set', this.setPowerState.bind(this));
 					break;
-				default	:	
+				default	:
 					this.switchService
-					.getCharacteristic(Characteristic.On)	
-					.on('set', this.setPowerState.bind(this));					
+					.getCharacteristic(Characteristic.On)
+					.on('set', this.setPowerState.bind(this));
 					break;}
 					return [this.switchService];
-		case "Light":	
-			this.lightbulbService = new Service.Lightbulb(this.name);			
+		case "Light":
+			this.lightbulbService = new Service.Lightbulb(this.name);
 			switch (this.switchHandling) {
 			//Power Polling
 			case "yes" :
@@ -291,15 +295,15 @@ var pollingtoevent = require('polling-to-event');
 				.on('get', function(callback) {callback(null, that.state)})
 				.on('set', this.setPowerState.bind(this));
 				break;
-			default:		
+			default:
 				this.lightbulbService
-				.getCharacteristic(Characteristic.On)	
+				.getCharacteristic(Characteristic.On)
 				.on('set', this.setPowerState.bind(this));
 				break;
 			}
-			// Brightness Polling 
+			// Brightness Polling
 			if (this.brightnessHandling == "realtime") {
-				this.lightbulbService 
+				this.lightbulbService
 				.addCharacteristic(new Characteristic.Brightness())
 				.on('get', function(callback) {callback(null, that.currentlevel)})
 				.on('set', this.setBrightness.bind(this));
@@ -307,11 +311,11 @@ var pollingtoevent = require('polling-to-event');
 				this.lightbulbService
 				.addCharacteristic(new Characteristic.Brightness())
 				.on('get', this.getBrightness.bind(this))
-				.on('set', this.setBrightness.bind(this));							
+				.on('set', this.setBrightness.bind(this));
 			}
-	
+
 			return [informationService, this.lightbulbService];
-			break;		
+			break;
 		}
 	}
 };
